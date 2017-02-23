@@ -1,0 +1,2 @@
+# Practical-Machine-Learning---Final-Project
+This is a writeup for the final project work on the coursera online MOOC "Practical Machine Learning". This project is about predicting whether the move a person woking out is of class "A", "B", "C", "D" or "E". Type "A" being correct way i.e exactly according to the specification, throwing the elbows to the front represented by class B, lifting the dumbbell only halfway represented by class C, lowering the dumbbell only halfway represented by class D and throwing the hips to the front represented by class E.
