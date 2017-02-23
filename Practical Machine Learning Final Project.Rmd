@@ -1,0 +1,325 @@
+---
+title: "Practical Machine Learning Final Project"
+author: "D Kasti"
+date: "2/22/2017"
+output: html_document
+---
+# What this project is about
+This is a writeup for the final project work on the coursera online MOOC "Practical Machine Learning". This project is about predicting whether the move a person woking out is of class "A", "B", "C", "D" or "E". Type "A" being correct way i.e exactly according to the specification, throwing the elbows to the front represented by class B, lifting the dumbbell only halfway represented by class C, lowering the dumbbell only halfway represented by class D and throwing the hips to the front represented by class E.
+
+# Getting and Cleaning data
+First we load the training data and the pure validation data set:
+```{r, cache = T, message=F}
+data = read.csv("pml-training.csv")
+testData = read.csv("pml-testing.csv")
+```
+Next, we want to divide the `data` into working training set and working test set for model building purpose:
+```{r, message=F, cache = T}
+library(caret)
+set.seed(1)
+# Working training and test data set
+inTrain = createDataPartition(y = data$classe, p = .7, list = F)
+training = data[inTrain,]
+testing = data[-inTrain,]
+```
+We disregard the variables (columns) with `NA` values, blank values or values with zero denominators and take only those variables that we need for our purpose:
+```{r, message=F, cache = T}
+# Removing the columns with NAs
+training1 = training[,complete.cases(t(training))]
+# Choosing only what we need
+training1 = training1[,8:93]
+# Removing the columns with blank data
+library(dplyr)
+training1 = select(training1,-(kurtosis_roll_belt:amplitude_yaw_belt))
+training1 = select(training1,-(kurtosis_roll_arm:skewness_yaw_arm))
+training1 = select(training1,-(kurtosis_roll_dumbbell:amplitude_yaw_dumbbell))
+training1 = select(training1,-(kurtosis_roll_forearm:amplitude_yaw_forearm))
+
+# Removing the columns with NAs and choosing only what we need on the whole data
+data1 = data[,complete.cases(t(data))]
+data1 = data1[,8:93]
+data1 = select(data1,-(kurtosis_roll_belt:amplitude_yaw_belt))
+data1 = select(data1,-(kurtosis_roll_arm:skewness_yaw_arm))
+data1 = select(data1,-(kurtosis_roll_dumbbell:amplitude_yaw_dumbbell))
+data1 = select(data1,-(kurtosis_roll_forearm:amplitude_yaw_forearm))
+# One can use pipeline here.
+
+# Removing the columns with NAs and choosing only what we need on the testing data
+testing1 = testing[,complete.cases(t(data))]
+testing1 = testing1[,8:93]
+testing1 = testing1 %>% select(-(kurtosis_roll_belt:amplitude_yaw_belt)) %>% select(-(kurtosis_roll_arm:skewness_yaw_arm)) %>%
+     select(-(kurtosis_roll_dumbbell:amplitude_yaw_dumbbell)) %>% select(-(kurtosis_roll_forearm:amplitude_yaw_forearm))
+
+# Removing the columns with NAs and choosing only what we need on the testData
+testData1 = testData[,complete.cases(t(data))]
+testData1 = testData1[,8:93]
+testData1 = testData1 %>% select(-(kurtosis_roll_belt:amplitude_yaw_belt)) %>% select(-(kurtosis_roll_arm:skewness_yaw_arm)) %>%
+    select(-(kurtosis_roll_dumbbell:amplitude_yaw_dumbbell)) %>% select(-(kurtosis_roll_forearm:amplitude_yaw_forearm))
+```
+This cleans the data and leaves it with only 52 predictors and one response variable `classe`. We use all these 52 predictors for our model building process.
+```{r, cache = T}
+dim(data1)
+```
+
+# Linear Discriminant Analysis
+We first try using Linear Discriminant Analysis model. We perform a 10-fold cross validation first:
+```{r, cache = T, message=F}
+# 10-fold cross validation using all 52 predictors in training1
+k = 10
+set.seed(2)
+folds = sample(1:k, nrow(training1), replace = T)
+
+#lda
+library(MASS)
+lda.cv.errors = numeric(k)
+
+for(i in 1:k){
+    fit = lda(classe~., data = training1[folds!=i,]);
+    pred = predict(fit, newdata = training1[folds == i,]);
+    lda.cv.errors[i] = mean(pred$class != training1[folds == i,]$classe)
+}
+mean(lda.cv.errors)
+```
+Thus, it shows that the LDA model leads into an estimated test error of `30%`. We further build the model on the whole of the working training data set `training1` and see that the test error by applying on the working test data `testing1` is still around `30%`.
+```{r, cache=T, message=F}
+# Full lda on testing data
+lda.fit.full = lda(classe~., data = training1)
+lda.pred.full = predict(lda.fit.full, newdata = testing)
+lda.error.rate = mean(lda.pred.full$class != testing1$classe)
+lda.error.rate
+```
+Finally, we build our final LDA model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the LDA model.
+```{r, cache=T, message=F}
+# lda on the actual testData
+lda.fit.final = lda(classe~., data = data1)
+lda.pred.final = predict(lda.fit.final, newdata = testData1)
+lda.pred.final$class
+```
+Lets see next if the error rate decreases if we use QDA model.
+
+# Quadratic Discriminant Analysis
+Again, we first perform 10-fold cross validation for QDA model.
+```{r, cache=T, message=F}
+# qda cross validation
+qda.cv.errors = numeric(k)
+
+for(i in 1:k){
+    fit = qda(classe~., data = training1[folds!=i,]);
+    pred = predict(fit, newdata = training1[folds == i,]);
+    qda.cv.errors[i] = mean(pred$class != training1[folds == i,]$classe)
+}
+mean(qda.cv.errors)
+```
+Aha! QDA seems to improve a lot. The estimated test error (from cross validation) went down from 30% to 10% as we move from LDA to QDA. We further build the model on the whole of the working training data set `training1` and see that the test error by applying on the working test data `testing1` is still around `10%`.
+```{r, cache=T, message=F}
+# Full qda on testing data
+qda.fit.full = qda(classe~., data = training1)
+qda.pred.full = predict(qda.fit.full, newdata = testing)
+qda.error.rate = mean(qda.pred.full$class != testing$classe)
+qda.error.rate
+```
+Finally, we build our final QDA model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the QDA model.
+```{r, cache=T, message=F}
+# qda on the actual testData
+qda.fit.final = qda(classe~., data = data1)
+qda.pred.final = predict(qda.fit.final, newdata = testData1)
+qda.pred.final$class
+```
+We further analyze to see if we can improve our model by using K-nearest neighborhood method.
+
+# K nearest neighborhood
+```{r, cache=T, message=F}
+# knn cross validation
+library(class)
+set.seed(2)
+K = 20
+knn.cv.errors = matrix(NA, k, K, dimnames =list(NULL,paste (1:K)))
+
+for(j in 1:K){
+    for(i in 1:k){
+        train.X = training1[folds != i,1:52];
+        test.X = training1[folds == i, 1:52];
+        train.Direction = training1$classe[folds != i];
+        pred = knn(train.X, test.X, train.Direction, k = j)
+        knn.cv.errors[i,j] = mean(pred != training1[folds == i,]$classe) 
+    } 
+}
+knn.errors = apply(knn.cv.errors,2,mean)
+knn.errors
+# Turns out that K=1 works best for the KNN method.
+```
+The test error is minimum, `4%` for the KNN method with `K = 1`. This is significant improvement over QDA model. We further build the model on the whole of the working training data set `training1` and see that the test error by applying on the working test data `testing1` is still around `3.5%`.
+```{r, cache=T, message=F}
+# Full knn (with K = 1) on testing data
+train.X = training1[,1:52]
+test.X = testing1[,1:52]
+train.Direction = training1$classe
+knn.pred = knn(train.X, test.X, train.Direction, k=1)
+knn.error.rate = mean(knn.pred != testing1$classe)
+knn.error.rate
+```
+Finally, we build our final KNN model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the KNN model.
+```{r, cache=T, message=F}
+# knn on the actual testData
+train.X = data1[,1:52]
+test.X = testData1[,1:52]
+train.Direction = data1$classe
+knn.pred.final = knn(train.X, test.X, train.Direction, k=1)
+knn.pred.final
+```
+We next try to analyze with the tree, bagging, random forest and boosting methods:
+# Decision Tree
+```{r, cache=T, message=F}
+# Classification tree
+library(tree)
+set.seed(1)
+tree.fit = tree(classe~., data = training1)
+
+# Cross Validation on tree fit
+cv.tree.errors = cv.tree(tree.fit, FUN = prune.misclass)
+cv.tree.errors
+
+# tree model applied on the working testing data
+tree.pred = predict(tree.fit, testing, type = "class")
+table(tree.pred, testing$classe)
+tree.error.rate = mean(tree.pred != testing$classe)
+tree.error.rate
+```
+The cross validation shows that a pruned tree of size 15 is the best (which is the largest size, i.e. default, anyway). We build our final tree model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the tree model.
+```{r, cache=T, message=F}
+# tree on the actual testData
+tree.fit.final = tree(classe~., data = data1)
+tree.pred.final = predict(tree.fit.final, newdata = testData, type = "class")
+tree.pred.final
+```
+Next, we try to see if bagging model on trees improves the result:
+```{r, cache=T, message=F}
+# Cross Validation on bagging
+set.seed(1)
+k = 10
+num_trees = 1000
+bag.cv.errors =  numeric(k)
+for(i in 1:k){
+    fit = randomForest(classe~., data = training1[folds != i,], mtry = 52, ntree = num_trees)
+    pred = predict(fit, training1[folds == i,])
+    bag.cv.errors[i] = mean(pred != training1[folds == i,]$classe) 
+} 
+mean(bag.cv.errors)
+```
+Here, the estimate for the test error under the bagging model is found to be ... which is way better than a decision tree model. We further build the model on the whole of the working training data set `training1` and see that the test error by applying on the working test data `testing1` is still around ...
+```{r, cache=T, message=F}
+# Bagging
+library(randomForest)
+set.seed(1)
+bag.fit = randomForest(classe~., data = training1, mtry = 52, importance = TRUE) #bagging
+# Bagging tested on testing set
+bag.pred = predict(bag.fit, newdata = testing)
+table(bag.pred, testing$classe)
+bag.error.rate = mean(bag.pred != testing$classe)
+bag.error.rate
+```
+Finally, we build our final bagging model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the bagging model.
+```{r, cache=T, message=F}
+# Bagging on the actual testData
+bag.fit.final = randomForest(classe~., data = data1, mtry = 52, importance = TRUE) #bagging
+bag.pred.final = predict(bag.fit.final, newdata = testData1)
+bag.pred.final
+```
+# Random Forest
+```{r, cache=T, message=F}
+# Random forest with mtry = 15
+# Random forest with a the default 500 trees
+library(randomForest)
+set.seed(1)
+rf.fit = randomForest(classe~., data = training1, mtry = 15, importance = TRUE)
+rf.pred = predict(rf.fit, newdata = testing)
+mean(rf.pred != testing$classe)
+
+# Random forest with 1000 trees
+rf.fit1000 = randomForest(classe~., data = training1, mtry = 15, importance = TRUE, ntree = 1000)
+rf.pred1000 = predict(rf.fit1000, newdata = testing)
+mean(rf.pred1000 != testing$classe)
+```
+We can see that the model improved from an error of 0.4% to 0.3% if we use 1000 trees instead of the default 500. Now, lets look at the cross validation process to estimate the test error.
+```{r, cache=T, message=F}
+set.seed(1)
+k = 10
+num_trees = 1000
+mtry_value = 15
+rf.cv.errors =  numeric(k)
+for(i in 1:k){
+    fit = randomForest(classe~., data = training1[folds != i,], mtry = mtry_value, ntree = num_trees)
+    pred = predict(fit, training1[folds == i,])
+    rf.cv.errors[i] = mean(pred != training1[folds == i,]$classe) 
+} 
+
+mean(rf.cv.errors)
+```
+We observe that the estimate of test error is improved from .... as we go from bagging model to the random forest model. Finally, we build our final random forest model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the KNN model.
+```{r, cache=T, message=F}
+# Random forest on actual testData with default 500 trees
+rf.fit.final = randomForest(classe~., data = data1, mtry = 15, importance = TRUE)
+rf.pred.final = predict(rf.fit.final, newdata = testData1)
+rf.pred.final
+
+# Random forest on actual testData with 1000 trees
+rf.fit.final1000 = randomForest(classe~., data = data1, mtry = 15, importance = TRUE, ntree = 1000)
+rf.pred.final1000 = predict(rf.fit.final1000, newdata = testData1)
+rf.pred.final1000
+```
+We are also curious if it will be any better when we use the boosting model instead.
+
+# Boosting
+```{r, cache=T, message=F}
+# Cross Validation on Boosting
+library(gbm)
+set.seed(1)
+k = 10
+num_trees = 1000
+depth_value = 4
+shrink_value = 0.2
+boost.cv.errors =  numeric(k)
+for(i in 1:k){
+    fit = gbm(classe~., data = training1[folds != i,], distribution = "multinomial", interaction.depth = depth_value, n.trees = num_trees, shrinkage = shrink_value);
+    pred.prob = predict(fit, training1[folds == i,], n.trees = num_trees, type = "response");
+    pred = apply(pred.prob, 1, which.max);
+    pred = factor(pred, labels = c("A", "B", "C", "D", "E"))
+    boost.cv.errors[i] = mean(pred != training1[folds == i,]$classe) 
+} 
+mean(boost.cv.errors)
+```
+Thus, it seems that the estimate of the test error is ... which is ...We further build the model on the whole of the working training data set `training1` and see that the test error by applying on the working test data `testing1` is still around ....
+```{r, cache=T, message=F}
+set.seed(1)
+boost.fit = gbm(classe~., data = training1, distribution = "multinomial", n.trees = 1000, interaction.depth = 4, shrinkage = 0.2, verbose = F)
+boost.pred.prob = predict(boost.fit, newdata = testing, n.trees = 1000, type = "response")
+# We only get the probs from the above line of code. So, we need to change the probs to represent the appropriate factor values
+boost.pred = apply(boost.pred.prob, 1, which.max)
+boost.pred = factor(boost.pred, labels = c("A", "B", "C", "D", "E"))
+mean(boost.pred != testing$classe)
+```
+Finally, we build our final boosting model on the whole of the training data `data1` and apply it in the pure validation set `testData1` to obtain the required final prediction from the boosting model.
+```{r, cache=T, message=F}
+# Boosting on actual testData
+boost.fit.final = gbm(classe~., data = data1, distribution = "multinomial", n.trees = 1000, interaction.depth = 4, shrinkage = 0.2, verbose = F)
+boost.pred.prob.final = predict(boost.fit.final, newdata = testData1, n.trees = 1000, type = "response")
+boost.pred.final = apply(boost.pred.prob.final, 1, which.max)
+boost.pred.final = factor(boost.pred.final, labels = c("A", "B", "C", "D", "E"))
+boost.pred.final
+```
+# Conclusion: Comparision and Majority Vote
+We would like to compare the predictions of each of the 7 models we used:
+```{r, cache=T, message=F}
+# Comparision of Different models' predictions
+mean(bag.pred.final != rf.pred.final)
+mean(bag.pred.final != rf.pred.final1000)
+mean(bag.pred.final != boost.pred.final)
+mean(bag.pred.final != knn.pred.final)
+mean(bag.pred.final != tree.pred.final)
+mean(lda.pred.final$class != boost.pred.final)
+mean(qda.pred.final$class != boost.pred.final)
+```
+As we can see, bagging, random forest, boosting and the knn methods all gave the same predictions and their test error rate were also found to be least as compared to the tree, QDA and LDA models. So, we go ahead with the majority vote of the predictions of the models and use ... as our chosen prediction. The final prediction is:
+```{r, cache=T, message=F}
+bag.pred.final
+```
